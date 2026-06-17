@@ -35,3 +35,13 @@ Computer Science and Engineering
 
 Rajalakshmi Engineering College
 
+##Live Demo
+
+Frontend:
+
+https://mystery-mind-51sz.vercel.app/
+
+Backend:
+
+https://mysterymind-1.onrender.com
+
