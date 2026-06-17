@@ -28,6 +28,13 @@ client = Groq(api_key=GROQ_API_KEY)
 
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {
+        "message": "MysteryMind API is running",
+        "status": "online"
+    }
+
 # CORS so your React app can call backend
 app.add_middleware(
     CORSMiddleware,
