@@ -165,7 +165,7 @@ function App() {
     playSound("click");
     setIsLoadingCase(true);
     try {
-      const response = await axios.get("http://localhost:8000/generate-case");
+      const response = await axios.get("https://mysterymind-1.onrender.com/generate-case");
       setData(response.data);
       resetCaseState();
       setCaseCount((prev) => prev + 1);
@@ -234,7 +234,7 @@ function App() {
     setIsTyping(true);
 
     try {
-      const response = await axios.post("http://localhost:8000/interrogate", {
+      const response = await axios.post("https://mysterymind-1.onrender.com/interrogate", {
         suspect_name: selectedInterrogation.name,
         motive: selectedInterrogation.motive,
         alibi: selectedInterrogation.alibi,
@@ -282,7 +282,7 @@ function App() {
       }
 
       const response = await axios.post(
-        "http://localhost:8000/check-evidence",
+        "https://mysterymind-1.onrender.com/check-evidence",
         {
           suspect,
           evidence_text: text,
