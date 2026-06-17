@@ -27,5 +27,9 @@ Database:
 AI:
 - Google Gemini API
 
-## Author
+## Developed By
+
 Kanija Fathima J
+Computer Science and Engineering
+Rajalakshmi Engineering College
+
