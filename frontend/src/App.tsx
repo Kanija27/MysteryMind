@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-type GamePhase = "landing" | "app";
+type GamePhase = "intro" | "name" | "app";
 type MainTab =
   | "case"
   | "suspects"
@@ -49,7 +49,7 @@ function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [score, setScore] = useState(0);
   const [interrogated, setInterrogated] = useState<string[]>([]);
-  const [gamePhase, setGamePhase] = useState<GamePhase>("landing");
+  const [gamePhase, setGamePhase] = useState<GamePhase>("intro");
   const [notebookNotes, setNotebookNotes] = useState("");
   const [activeTab, setActiveTab] = useState<MainTab>("case");
 
@@ -63,15 +63,44 @@ function App() {
 
   const [isLoadingCase, setIsLoadingCase] = useState(false);
 
+  const [username, setUsername] = useState("");
+  const [nameInput, setNameInput] = useState("");
+
+  // welcome popup after entering name
+  const [showWelcomePopup, setShowWelcomePopup] = useState(false);
+
+  // keep hum alive on intro + name pages
+  const humRef = useRef<HTMLAudioElement | null>(null);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(HISTORY_KEY);
-      if (raw) {
-        setHistory(JSON.parse(raw));
-      }
+      if (raw) setHistory(JSON.parse(raw));
     } catch {
       // ignore
     }
+
+    // create hum element once
+    const hum = new Audio("/assets/sounds/mystery-hum.mp3");
+    hum.loop = true;
+    hum.volume = 0.4;
+    humRef.current = hum;
+
+    // try to start hum + stinger on load (may be blocked until user click)
+    hum
+      .play()
+      .catch(() => {
+        // autoplay may be blocked; we'll try again on first click
+      });
+
+    playSound("mystery-stinger");
+
+    return () => {
+      if (humRef.current) {
+        humRef.current.pause();
+        humRef.current = null;
+      }
+    };
   }, []);
 
   const persistHistory = (entries: CaseHistoryEntry[]) => {
@@ -90,16 +119,29 @@ function App() {
       click: "click.mp3",
       "evidence-reveal": "evidence-reveal.mp3",
       "case-solved": "case-solved.mp3",
+      "mystery-stinger": "mystery-stinger.mp3",
     };
 
     const file = soundMap[type];
     if (!file) return;
     try {
       const audio = new Audio(`/assets/sounds/${file}`);
-      audio.volume = type === "book-open" ? 0.9 : 0.65;
+      audio.volume =
+        type === "mystery-stinger"
+          ? 0.9
+          : type === "case-solved"
+          ? 0.8
+          : 0.65;
       audio.play().catch(() => {});
     } catch {
       // ignore
+    }
+  };
+
+  const stopHum = () => {
+    if (humRef.current) {
+      humRef.current.pause();
+      humRef.current.currentTime = 0;
     }
   };
 
@@ -127,6 +169,10 @@ function App() {
       setData(response.data);
       resetCaseState();
       setCaseCount((prev) => prev + 1);
+
+      // normal book‑open + page‑turn for case
+      playSound("book-open");
+      setTimeout(() => playSound("page-turn"), 400);
     } catch (error) {
       console.error(error);
     } finally {
@@ -141,16 +187,28 @@ function App() {
     return "Rookie Detective";
   };
 
-  const startInvestigation = () => {
-    playSound("book-open");
-    setTimeout(() => {
-      playSound("page-turn");
-    }, 600);
+  // intro -> name screen (keep hum going)
+  const goToNamePhase = () => {
+    // if hum was blocked earlier, try playing now on click
+    if (humRef.current && humRef.current.paused) {
+      humRef.current.play().catch(() => {});
+    }
+    playSound("click");
+    setGamePhase("name");
+  };
 
-    setTimeout(() => {
-      setGamePhase("app");
-      generateMystery();
-    }, 1300);
+  // name screen -> app (stop hum, book open occurs inside generateMystery)
+  const confirmNameAndStart = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+
+    setUsername(trimmed);
+
+    stopHum();
+    setGamePhase("app");
+    setShowWelcomePopup(true);
+
+    await generateMystery();
   };
 
   const interrogate = (suspect: Suspect) => {
@@ -253,7 +311,8 @@ function App() {
     const scoreChange = correct ? +100 : -25;
 
     if (correct) {
-      setResult("✅ CASE CLOSED — BRILLIANT DEDUCTION, DETECTIVE!");
+      const namePart = username ? ` You’re great, ${username}!` : "";
+      setResult(`✅ CASE SOLVED.${namePart}`);
       playSound("case-solved");
     } else {
       setResult("❌ WRONG SUSPECT. TRACE LOST IN THE GRID...");
@@ -386,8 +445,10 @@ function App() {
             </div>
 
             <div className="case-note">
-              Use the tabs to review suspects, evidence, and interrogation.
-              When you are ready, record your verdict in the Accusation tab.
+              <p>
+                Review the suspects, evidence, and witness statements. When you
+                are ready, record your verdict in the Accusation tab.
+              </p>
             </div>
           </div>
         </section>
@@ -643,7 +704,7 @@ function App() {
       );
     }
 
-    // Accusation tab
+    // ACCUSATION TAB
     return (
       <section className="panel">
         <div className="panel-header">
@@ -687,7 +748,8 @@ function App() {
 
   return (
     <div className="app-root">
-      {gamePhase === "landing" && (
+      {/* PHASE 1: mystery intro screen (with hum) */}
+      {gamePhase === "intro" && (
         <div className="landing-shell">
           <div className="landing-card">
             <div className="landing-title">
@@ -695,25 +757,67 @@ function App() {
               <p>DETECTIVE CONSOLE</p>
             </div>
             <div className="landing-text">
-              Open a new case file and use AI-powered tools to solve each
-              mystery by interrogating suspects and analysing evidence.
+              A dim room, a single terminal, and a trail of impossible cases.
+              When you are ready, step in as the lead investigator.
             </div>
-            <button className="btn-primary lg" onClick={startInvestigation}>
-              Start investigation
+            <button className="btn-primary lg" onClick={goToNamePhase}>
+              Start case
             </button>
+          </div>
+
+          <div className="landing-footer">
+            © 2026 MysteryMind · Developed by Kanija Hussain
           </div>
         </div>
       )}
 
+      {/* PHASE 2: name input (hum still playing) */}
+      {gamePhase === "name" && (
+        <div className="landing-shell">
+          <div className="landing-card">
+            <div className="landing-title">
+              <h1>IDENTIFY</h1>
+              <p>INVESTIGATOR LOGIN</p>
+            </div>
+            <div className="landing-text">
+              Enter your investigator name so the system can brief you on the
+              case.
+            </div>
+            <div className="name-input-row">
+              <input
+                type="text"
+                placeholder="Enter your name..."
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && confirmNameAndStart()}
+              />
+              <button className="btn-primary" onClick={confirmNameAndStart}>
+                Continue
+              </button>
+            </div>
+          </div>
+
+          <div className="landing-footer">
+            © 2026 MysteryMind · Developed by Kanija Hussain
+          </div>
+        </div>
+      )}
+
+      {/* PHASE 3: main app (no hum, normal UI) */}
       {gamePhase === "app" && (
         <div className="main-shell">
-          {/* HEADER – only logo+name, title, cases/score/rank/new case */}
+          {/* HEADER */}
           <header className="top-bar">
             {/* Left: logo + name */}
             <div className="brand">
               <div className="brand-mark" />
               <div>
                 <div className="brand-title">MYSTERYMIND</div>
+                {username && (
+                  <div className="brand-subtitle">
+                    Investigator: {username}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -766,8 +870,32 @@ function App() {
                 <div className="loading-text">Generating new case...</div>
               </div>
             )}
+
+            {/* welcome popup after name */}
+            {showWelcomePopup && username && (
+              <div className="welcome-popup">
+                <div className="welcome-card">
+                  <div className="welcome-title">Welcome, {username}</div>
+                  <div className="welcome-text">
+                    Help us with the investigation. The grid is counting on you.
+                  </div>
+                  <button
+                    className="btn-primary"
+                    onClick={() => setShowWelcomePopup(false)}
+                  >
+                    Begin
+                  </button>
+                </div>
+              </div>
+            )}
+
             {renderTabContent()}
           </div>
+
+          {/* FOOTER – visible on all app pages */}
+          <footer className="app-footer">
+            <span>© 2026 MysteryMind · Developed by Kanija Hussain</span>
+          </footer>
         </div>
       )}
     </div>
